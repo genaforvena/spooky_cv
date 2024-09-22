@@ -34,7 +34,7 @@ If these files are missing, the script will provide download instructions.
 1. Clone this repository or download the script.
 2. Install the required Python packages:
    ```
-   pip install opencv-python numpy
+   pip install -r requirements.txt
    ```
 3. Download the required YOLO files if they're not present:
    - `yolov3.weights`: https://pjreddie.com/media/files/yolov3.weights
