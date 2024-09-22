@@ -1,0 +1,16 @@
+.venv/
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pyj
+*.pyjz
+*.pyjx
+*.pyjx
+
+coco.names
+yolov3.cfg
+yolov3.weights
