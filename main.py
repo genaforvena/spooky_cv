@@ -2,9 +2,24 @@ import cv2
 import numpy as np
 from datetime import datetime
 import os
+import argparse
+import time
 
-print("Current working directory:", os.getcwd())
-print("Files in current directory:", os.listdir())
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description="Person detection with optional trigger conditions for art installations.")
+parser.add_argument("--focal-length", type=float, help="Focal length of the camera (calibrated)")
+parser.add_argument("--trigger-distance", type=float, help="Distance to trigger the event (in cm)")
+parser.add_argument("--trigger-count", type=int, help="Number of people required to trigger the event")
+parser.add_argument("--cooldown", type=float, default=5.0, help="Cooldown period between triggers (in seconds)")
+args = parser.parse_args()
+
+FOCAL_LENGTH = args.focal_length
+TRIGGER_DISTANCE = args.trigger_distance
+TRIGGER_COUNT = args.trigger_count
+COOLDOWN_PERIOD = args.cooldown
+
+print(f"Current working directory: {os.getcwd()}")
+print(f"Files in current directory: {os.listdir()}")
 
 # Check if files exist
 required_files = ["yolov3.weights", "yolov3.cfg", "coco.names"]
@@ -23,23 +38,11 @@ for file in required_files:
     else:
         print(f"{file} found.")
 
-if all(os.path.exists(file) for file in required_files):
-    # Load YOLOv3
-    net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
-    layer_names = net.getLayerNames()
-    output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+# Constants for distance estimation
+KNOWN_WIDTH = 40  # cm (approximate width of a person)
 
-    # Load COCO names
-    with open("coco.names", "r") as f:
-        classes = [line.strip() for line in f.readlines()]
-
-    # Initialize webcam
-    cap = cv2.VideoCapture(0)  # 0 is usually the default webcam
-
-    if not cap.isOpened():
-        raise Exception("Error: Could not open webcam.")
-    else:
-        print("Webcam opened successfully.")
+def distance_to_camera(knownWidth, focalLength, perWidth):
+    return (knownWidth * focalLength) / perWidth if focalLength else None
 
 # Load YOLOv3
 net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
@@ -52,6 +55,17 @@ with open("coco.names", "r") as f:
 
 # Initialize webcam
 cap = cv2.VideoCapture(0)  # 0 is usually the default webcam
+
+if not cap.isOpened():
+    raise Exception("Error: Could not open webcam.")
+else:
+    print("Webcam opened successfully.")
+
+def trigger_event():
+    print("Event triggered!")
+    # Add your event triggering code here
+
+last_trigger_time = 0
 
 while True:
     ret, frame = cap.read()
@@ -93,20 +107,50 @@ while True:
     # Apply non-max suppression
     indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
 
-    # Count persons and draw bounding boxes
+    # Count persons, draw bounding boxes, and estimate distances
     person_count = 0
+    close_person_count = 0
     for i in range(len(boxes)):
         if i in indexes:
             x, y, w, h = boxes[i]
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            
+            # Estimate distance if focal length is provided
+            distance = distance_to_camera(KNOWN_WIDTH, FOCAL_LENGTH, w) if FOCAL_LENGTH else None
+            
+            # Determine if person is within trigger distance
+            is_close = distance <= TRIGGER_DISTANCE if TRIGGER_DISTANCE and distance else True
+            
+            # Draw bounding box
+            color = (0, 255, 0) if is_close else (0, 0, 255)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+            
+            # Display distance if available
+            if distance:
+                label = f"{distance:.2f}cm"
+                cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            
             person_count += 1
+            if is_close:
+                close_person_count += 1
 
-    # Get current time
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Check if event should be triggered
+    current_time = time.time()
+    should_trigger = True
+    if TRIGGER_COUNT is not None:
+        should_trigger = should_trigger and (close_person_count >= TRIGGER_COUNT)
+    
+    if should_trigger and (current_time - last_trigger_time > COOLDOWN_PERIOD):
+        trigger_event()
+        last_trigger_time = current_time
+
+    # Get current time for display
+    current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Display information on the frame
-    cv2.putText(frame, f"Time: {current_time}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.putText(frame, f"Time: {current_time_str}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.putText(frame, f"Persons detected: {person_count}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    if TRIGGER_DISTANCE:
+        cv2.putText(frame, f"Persons within trigger distance: {close_person_count}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     # Display the result
     cv2.imshow("Webcam Person Detection", frame)
